@@ -125,6 +125,22 @@ class TestBlocklist(unittest.TestCase):
             "Should not block even exact matches with negative tolerance"
         )
 
+    def test_main_execution(self):
+        """Test the main execution block."""
+        import sys
+        import io
+        
+        # Redirect stdout to capture the output
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        
+        # Run the main block
+        if __name__ == '__main__':
+            unittest.main(argv=['dummy'], exit=False)
+        
+        # Restore stdout
+        sys.stdout = sys.__stdout__
+
 
 if __name__ == '__main__':
     unittest.main() 
