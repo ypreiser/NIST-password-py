@@ -8,6 +8,7 @@ import ssl
 API_HOST = "https://api.pwnedpasswords.com/range/"
 TIMEOUT = 10
 
+
 class PwnedPasswordChecker:
     """
     A class to check if a password has been compromised using the Have I Been Pwned (HIBP) API.
@@ -40,7 +41,8 @@ class PwnedPasswordChecker:
         prefix, suffix = sha1_hash[:5], sha1_hash[5:]
 
         try:
-            return self._make_request(prefix, suffix)
+            body = self._make_request(prefix)
+            return self.check_password_suffix(body, suffix)
         except urllib.error.URLError as e:
             self._handle_url_error(e)
         except TimeoutError as e:
@@ -48,16 +50,15 @@ class PwnedPasswordChecker:
         except Exception as e:
             raise ConnectionError(f"Unexpected error: {str(e)}") from e
 
-    def _make_request(self, prefix: str, suffix: str) -> bool:
+    def _make_request(self, prefix: str) -> str:
         """
-        Make the request to the HIBP API and check for the password suffix.
+        Make the request to the HIBP API.
 
         Args:
             prefix (str): The first 5 characters of the SHA-1 hash.
-            suffix (str): The remaining characters of the SHA-1 hash.
 
         Returns:
-            bool: True if the password hash is found, False otherwise.
+            str: The response body from the API.
 
         Raises:
             ConnectionError: For API or connection-related errors.
@@ -67,16 +68,37 @@ class PwnedPasswordChecker:
             url,
             headers={
                 "User-Agent": "Python-HIBP-Checker",
-                "Add-Padding": "true",  
+                "Add-Padding": "true",
             },
         )
 
-        with urllib.request.urlopen(req, timeout=self.timeout, context=self.ctx) as response:
+        with urllib.request.urlopen(
+            req, timeout=self.timeout, context=self.ctx
+        ) as response:
             if response.status != 200:
                 raise ConnectionError(f"API error: {response.status} {response.reason}")
 
-            body = response.read().decode("utf-8")
-            return any(line.split(":")[0].strip() == suffix for line in body.splitlines())
+            return response.read().decode("utf-8")
+
+    def check_password_suffix(self, body: str, suffix: str) -> bool:
+        """
+        Check if the password suffix is present in the response body
+        and has a count greater than 0.
+
+        Args:
+            body (str): The response body from the API.
+            suffix (str): The remaining characters of the SHA-1 hash.
+
+        Returns:
+            bool: True if the password hash is found with count > 0, False otherwise.
+        """
+        for line in body.splitlines():
+            parts = line.split(":")
+            if len(parts) == 2:  # Ensure the line has both suffix and count
+                hash_suffix, count = parts
+                if hash_suffix.strip() == suffix and int(count.strip()) > 0:
+                    return True
+        return False
 
     def _handle_url_error(self, e: urllib.error.URLError):
         """
@@ -93,3 +115,19 @@ class PwnedPasswordChecker:
             raise TimeoutError("Request timed out") from e
         raise ConnectionError(f"Network error: {str(e)}") from e
 
+
+if __name__ == "__main__":
+    password = input("Enter a password to check: ")
+    checker = PwnedPasswordChecker()
+
+    try:
+        sha1_hash = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
+        body = checker._make_request(
+            sha1_hash[:5]
+        )  # Get the response body for the prefix
+        compromised = checker.check_password(password)
+        print(f"hash: {sha1_hash}")
+        print(f"API Response: {body}")
+        print(f"Password compromised: {compromised}")
+    except Exception as e:
+        print(f"Error: {str(e)}")

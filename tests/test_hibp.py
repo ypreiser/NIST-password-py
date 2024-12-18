@@ -13,7 +13,7 @@ class TestPwnedPasswordChecker(unittest.TestCase):
         """Test when the password is found in the compromised list."""
         mock_response = MagicMock()
         mock_response.status = 200
-        mock_response.read.return_value = b"ABCDEF1234567890:5\n1234567890ABCDEF:10"
+        mock_response.read.return_value = b"ABCDEF123456:12345\n"
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         result = self.checker.check_password("password123")
