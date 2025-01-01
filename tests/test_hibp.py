@@ -1,51 +1,73 @@
 # tests\test_hibp.py
-import unittest
-from unittest.mock import patch, MagicMock
-from src.hibp import PwnedPasswordChecker
-import urllib.error
+import pytest
+from unittest.mock import patch
+from src.hibp import hibp_validator, ValidationResult
 
-class TestPwnedPasswordChecker(unittest.TestCase):
-    def setUp(self):
-        self.checker = PwnedPasswordChecker(timeout=5)
+class MockResponse:
+    def __init__(self, text, status_code):
+        self.text = text
+        self.status_code = status_code
 
-    @patch("urllib.request.urlopen")
-    def test_check_password_compromised(self, mock_urlopen):
-        """Test when the password is found in the compromised list."""
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.read.return_value = b"ABCDEF123456:12345\n"
-        mock_urlopen.return_value.__enter__.return_value = mock_response
 
-        result = self.checker.check_password("password123")
-        self.assertTrue(result)
+@pytest.fixture
+def valid_password_response():
+    """Mocked response for a password not found in breaches."""
+    return MockResponse(text="ABCDE12345:0\nFGHIJ67890:1", status_code=200)
 
-    @patch("urllib.request.urlopen")
-    def test_check_password_safe(self, mock_urlopen):
-        """Test when the password is not found in the compromised list."""
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.read.return_value = b"1234567890ABCDEF:10"
-        mock_urlopen.return_value.__enter__.return_value = mock_response
 
-        result = self.checker.check_password("safe_password")
-        self.assertFalse(result)
+@pytest.fixture
+def compromised_password_response():
+    """Mocked response for a compromised password."""
+    return MockResponse(text="123456:5\nABCDE:100", status_code=200)
 
-    @patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Timeout"))
-    def test_check_password_timeout(self, mock_urlopen):
-        """Test when a timeout occurs during the request."""
-        with self.assertRaises(TimeoutError):
-            self.checker.check_password("password123")
 
-    @patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Network Error"))
-    def test_check_password_network_error(self, mock_urlopen):
-        """Test when a network error occurs."""
-        with self.assertRaises(ConnectionError):
-            self.checker.check_password("password123")
+@pytest.fixture
+def error_response():
+    """Mocked response for an error from the API."""
+    return MockResponse(text="Internal Server Error", status_code=500)
 
-    def test_check_password_empty(self):
-        """Test when the password is empty."""
-        with self.assertRaises(ValueError):
-            self.checker.check_password("")
 
-if __name__ == "__main__":
-    unittest.main()
+@patch("main.requests.get")
+def test_hibp_validator_safe_password(mock_get, valid_password_response):
+    """Test safe password validation."""
+    mock_get.return_value = valid_password_response
+    result = hibp_validator("safe_password")
+    assert isinstance(result, ValidationResult)
+    assert result.is_valid is True
+    assert result.errors == []
+
+
+@patch("main.requests.get")
+def test_hibp_validator_compromised_password(mock_get, compromised_password_response):
+    """Test compromised password validation."""
+    mock_get.return_value = compromised_password_response
+    result = hibp_validator("compromised_password")
+    assert isinstance(result, ValidationResult)
+    assert result.is_valid is False
+    assert "Password has been compromised in a data breach." in result.errors
+
+
+@patch("main.requests.get")
+def test_hibp_validator_api_error(mock_get, error_response):
+    """Test handling of API errors."""
+    mock_get.return_value = error_response
+    with pytest.raises(RuntimeError) as excinfo:
+        hibp_validator("any_password")
+    assert "HaveIBeenPwned check failed:" in str(excinfo.value)
+
+
+@patch("main.requests.get")
+def test_hibp_validator_invalid_status(mock_get):
+    """Test unexpected API status codes."""
+    mock_get.return_value = MockResponse(text="", status_code=404)
+    with pytest.raises(RuntimeError) as excinfo:
+        hibp_validator("another_password")
+    assert "HaveIBeenPwned check failed:" in str(excinfo.value)
+
+
+def test_generate_sha1():
+    """Test SHA-1 generation for a given password."""
+    from main import generate_sha1
+    password = "test_password"
+    expected_hash = "8BB5A5F36E849B3D751B25A4DC74A64F338CE97A"
+    assert generate_sha1(password) == expected_hash
