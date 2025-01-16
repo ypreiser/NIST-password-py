@@ -1,6 +1,6 @@
 # nist_password_validator/blocklist.py
 
-from .utils import levenshtein_distance
+from .utils.levenshteinDistance import levenshtein_distance
 
 
 class Blocklist:

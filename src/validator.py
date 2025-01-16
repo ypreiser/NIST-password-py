@@ -1,6 +1,6 @@
 # nist_password_validator/validator.py
 
-from .utils import levenshtein_distance
+from .utils.levenshteinDistance import levenshtein_distance
 from .config import ValidationOptions, ValidationResult
 from .hibp import HIBPChecker
 
